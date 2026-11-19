@@ -1,0 +1,174 @@
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, shell, Notification, dialog } = require('electron');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { randomUUID } = require('node:crypto');
+const { Store } = require('./core/store.cjs');
+const { Ollama, validateSettings } = require('./core/provider.cjs');
+const { createTools } = require('./core/tools.cjs');
+const { runAgent } = require('./core/agent.cjs');
+
+app.setName('Mochi');
+app.setPath('userData', process.env.MOCHI_DATA_DIR
+  ? path.resolve(process.env.MOCHI_DATA_DIR)
+  : path.join(app.getPath('appData'), 'Mochi'));
+const locked = app.requestSingleInstanceLock();
+if (!locked) { app.quit(); } else {
+  let pet, panel, tray, store, tools, active, reminderTimer;
+  let quitting = false;
+  const approvals = new Map();
+  const uiFile = name => path.join(__dirname, 'ui', name);
+  const emit = event => {
+    for (const win of [pet, panel]) if (win && !win.isDestroyed()) win.webContents.send('mochi:event', event);
+  };
+  const snapshot = () => ({ ...store.state, workspace: path.join(app.getPath('userData'), 'workspace'), busy: !!active });
+  const refresh = () => emit({ type: 'state', state: snapshot() });
+  const setMood = mood => emit({ type: 'mood', mood });
+  function positionPanel() {
+    if (!pet || !panel) return;
+    const anchor = pet.getBounds();
+    const area = screen.getDisplayMatching(anchor).workArea;
+    const width = Math.min(420, area.width), height = Math.min(650, area.height);
+    panel.setBounds({ width, height,
+      x: Math.max(area.x, Math.min(anchor.x - width + anchor.width, area.x + area.width - width)),
+      y: Math.max(area.y, Math.min(anchor.y - height - 8, area.y + area.height - height)),
+    });
+  }
+  function showPanel() { positionPanel(); panel.show(); panel.focus(); refresh(); }
+  function makeWindow(options, file) {
+    const win = new BrowserWindow({ ...options, webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false,
+    } });
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-navigate', event => event.preventDefault());
+    win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    win.loadFile(uiFile(file));
+    return win;
+  }
+  function register(name, handler, petAllowed = false) {
+    ipcMain.handle(`mochi:${name}`, (event, ...args) => {
+      const validPanel = event.sender === panel.webContents && event.senderFrame?.url === pathToFileURL(uiFile('panel.html')).href;
+      const validPet = petAllowed && event.sender === pet.webContents && event.senderFrame?.url === pathToFileURL(uiFile('pet.html')).href;
+      if (!validPanel && !validPet) throw new Error('Untrusted sender.');
+      return handler(...args);
+    });
+  }
+  function askApproval(action, signal) {
+    signal.throwIfAborted();
+    showPanel(); setMood('waiting');
+    return new Promise(resolve => {
+      const id = randomUUID();
+      let timer;
+      const finish = allowed => {
+        clearTimeout(timer); signal.removeEventListener('abort', onAbort); approvals.delete(id);
+        emit({ type: 'approval-resolved', id });
+        resolve(allowed);
+      };
+      const onAbort = () => finish(false);
+      approvals.set(id, finish);
+      signal.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => finish(false), 120_000);
+      emit({ type: 'approval', id, ...action });
+    });
+  }
+  async function run(work) {
+    if (active) throw new Error('Mochi is already working. Stop the current task first.');
+    const controller = new AbortController(); active = controller;
+    refresh(); setMood('thinking');
+    try { return await work(controller.signal); }
+    finally { active = null; refresh(); setMood('idle'); }
+  }
+  function deliverReminders() {
+    try {
+      for (const reminder of store.due()) {
+        store.add('messages', { role: 'assistant', content: `Reminder: ${reminder.text}` }, 100);
+        emit({ type: 'reminder', text: reminder.text });
+        if (Notification.isSupported()) {
+          const notification = new Notification({ title: 'Mochi reminder', body: reminder.text });
+          notification.on('click', showPanel); notification.show();
+        }
+        setMood('happy'); refresh();
+      }
+    } catch (error) { emit({ type: 'error', message: `Reminder storage error: ${error.message}` }); }
+  }
+  app.whenReady().then(() => {
+    store = new Store(app.getPath('userData'));
+    tools = createTools({ store, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
+    const area = screen.getPrimaryDisplay().workArea;
+    pet = makeWindow({ width: 166, height: 180, x: area.x + area.width - 192, y: area.y + area.height - 200,
+      frame: false, transparent: true, resizable: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false }, 'pet.html');
+    pet.setAlwaysOnTop(true, 'floating');
+    pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    panel = makeWindow({ width: 420, height: 650, minWidth: 320, minHeight: 400, frame: false,
+      resizable: false, backgroundColor: '#f8f6ef', alwaysOnTop: true, show: false }, 'panel.html');
+    panel.on('close', event => { if (!quitting) { event.preventDefault(); panel.hide(); } });
+    pet.once('ready-to-show', () => pet.showInactive());
+    panel.once('ready-to-show', showPanel);
+    pet.on('moved', positionPanel);
+    screen.on('display-removed', () => {
+      const current = screen.getPrimaryDisplay().workArea;
+      pet.setPosition(current.x + current.width - 192, current.y + current.height - 200);
+    });
+    const pixels = Buffer.alloc(22 * 22 * 4);
+    for (let y = 0; y < 22; y++) for (let x = 0; x < 22; x++) {
+      const body = ((x - 10.5) / 9) ** 2 + ((y - 12) / 7) ** 2 < 1;
+      const ears = y >= 3 && y <= 10 && ((x >= 4 && x <= 7) || (x >= 14 && x <= 17));
+      const eyes = y >= 10 && y <= 12 && ((x >= 7 && x <= 8) || (x >= 13 && x <= 14));
+      if ((body || ears) && !eyes) pixels[(y * 22 + x) * 4 + 3] = 255;
+    }
+    const trayIcon = nativeImage.createFromBitmap(pixels, { width: 22, height: 22, scaleFactor: 1 });
+    trayIcon.setTemplateImage(true);
+    tray = new Tray(trayIcon); tray.setToolTip('Mochi');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Talk to Mochi', click: showPanel },
+      { label: 'Show / hide pet', click: () => pet.isVisible() ? pet.hide() : pet.showInactive() },
+      { label: 'Open workspace', click: () => shell.openPath(path.join(app.getPath('userData'), 'workspace')) },
+      { type: 'separator' }, { label: 'Quit Mochi', click: () => app.quit() },
+    ]));
+    tray.on('click', showPanel);
+    globalShortcut.register('CommandOrControl+Shift+Space', showPanel);
+    register('state', snapshot, true);
+    register('toggle', () => panel.isVisible() ? panel.hide() : showPanel(), true);
+    register('hide', () => panel.hide());
+    register('quit', () => app.quit());
+    register('workspace', () => shell.openPath(path.join(app.getPath('userData'), 'workspace')));
+    register('stop', () => active?.abort());
+    register('approve', (id, allowed) => {
+      if (typeof id !== 'string' || typeof allowed !== 'boolean') throw new Error('Invalid decision.');
+      approvals.get(id)?.(allowed);
+    });
+    register('settings', input => {
+      if (active) throw new Error('Wait for the current task to finish.');
+      const previous = store.state.settings;
+      store.state.settings = validateSettings(input);
+      try { store.save(); } catch (error) { store.state.settings = previous; throw error; }
+      refresh(); return store.state.settings;
+    });
+    register('status', async () => {
+      try { return await new Ollama(store.state.settings).status(); }
+      catch { return { connected: false, ready: false, models: [] }; }
+    });
+    register('tool', (name, args) => run(signal => tools.execute(name, args, { signal, approve: action => askApproval(action, signal) })));
+    register('chat', text => run(async signal => {
+      if (typeof text !== 'string' || !text.trim() || text.length > 8000) throw new Error('Enter a message up to 8000 characters.');
+      const history = [...store.state.messages];
+      store.add('messages', { role: 'user', content: text }, 100); refresh();
+      let answer;
+      try {
+        answer = await runAgent({ text, history, provider: new Ollama(store.state.settings), tools, signal,
+          approve: action => askApproval(action, signal), onEvent: event => {
+            emit(event); if (event.type === 'thinking' || event.type === 'tool') setMood('thinking');
+          } });
+      } catch (error) {
+        answer = signal.aborted ? 'Stopped. Completed actions remain in Activity.' : `I couldn’t finish: ${error.message}\nCheck Settings and make sure Ollama is running with your model installed.`;
+      }
+      store.add('messages', { role: 'assistant', content: answer }, 100);
+      return answer;
+    }));
+    reminderTimer = setInterval(deliverReminders, 1000);
+    panel.webContents.once('did-finish-load', deliverReminders);
+  }).catch(error => { dialog.showErrorBox('Mochi could not start', error.message); app.quit(); });
+  app.on('second-instance', () => { if (panel) showPanel(); });
+  app.on('activate', () => { if (panel) showPanel(); });
+  app.on('before-quit', () => { quitting = true; active?.abort(); clearInterval(reminderTimer); });
+  app.on('will-quit', () => globalShortcut.unregisterAll());
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'">
+<title>Mochi · your little desktop companion</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+<header><div class="wordmark"><span class="mini-pet">◕</span><div><strong>mochi</strong><small>a little company. a little help.</small></div></div><button id="hide" class="icon" aria-label="Close panel">×</button></header>
+<div class="connection"><span id="dot" class="dot"></span><span id="connection">Checking local model…</span><span class="local-tag">ON YOUR MACHINE</span></div>
+<nav aria-label="Sections"><button data-tab="chat" aria-pressed="true">Companion</button><button data-tab="memory">Notebook</button><button data-tab="activity">Activity</button><button data-tab="settings">Settings</button></nav>
+<main>
+<section id="chat" class="tab active" aria-label="Companion">
+<div id="messages" role="log" aria-live="polite"></div>
+<div id="working" role="status" hidden><span id="working-label">Mochi is thinking…</span><button id="stop">Stop</button></div>
+<form id="chat-form"><label class="sr-only" for="message">Message Mochi</label><textarea id="message" placeholder="What’s on your mind?" maxlength="8000" rows="2" required></textarea><button id="send" class="primary" type="submit" aria-label="Send message">↑</button></form>
+<p class="footnote">⌘ / Ctrl + Shift + Space to find me</p>
+</section>
+<section id="memory" class="tab scroll" aria-label="Notebook">
+<div class="section-title"><h1>Your little notebook</h1><p>Things you’ve asked me to remember.</p></div><div id="memories"></div>
+<form id="memory-form" class="stack"><label for="memory-text">Remember something</label><input id="memory-text" maxlength="1000" placeholder="I like quiet mornings." required><button class="secondary">Save a memory</button></form>
+<h2>Gentle nudges</h2><div id="reminders"></div>
+<form id="reminder-form" class="stack"><label for="reminder-text">Remind me to…</label><input id="reminder-text" maxlength="500" placeholder="Take a little walk" required><label for="reminder-at">When (your local time)</label><input id="reminder-at" type="datetime-local" required><button class="secondary">Set a reminder</button></form>
+<p class="hint">Reminders fire while Mochi is running. Missed reminders arrive the next time you open it.</p>
+</section>
+<section id="activity" class="tab scroll" aria-label="Activity"><div class="section-title"><h1>A small paper trail</h1><p>Completed tools and their results, stored locally.</p></div><div id="events"></div></section>
+<section id="settings" class="tab scroll" aria-label="Settings"><div class="section-title"><h1>Make yourself at home</h1><p>Your model. Your machine. Your companion.</p></div>
+<div class="setup-card"><strong>First, give Mochi a brain.</strong><p>Install Ollama, start it, then download a local model:</p><code>ollama pull qwen3:8b</code><p>The pet, notebook, and reminders work without a model.</p></div>
+<form id="settings-form" class="stack"><label for="endpoint">Local Ollama address</label><input id="endpoint" type="url" required><label for="model">Model name</label><input id="model" list="models" required><datalist id="models"></datalist><button class="primary">Save connection</button></form>
+<button id="check" class="secondary wide">Check connection</button><p id="status-detail" class="hint" role="status"></p>
+<h2>A place for your files</h2><p class="hint">Mochi can read and create text files in its own workspace. Put only the files you want to share with it here.</p><button id="workspace" class="secondary wide">Open Mochi’s workspace ↗</button>
+<h2>Always nearby</h2><p class="hint">Drag the grip above the pet to move it. Click the pet to chat. Closing this panel keeps Mochi running; use the menu bar or the button below to quit.</p><button id="quit" class="text-button">Quit Mochi</button>
+</section>
+</main>
+<div id="toast" role="status" hidden></div>
+<dialog id="approval"><div class="approval-heading">A LITTLE PERMISSION</div><h2 id="approval-title"></h2><p id="approval-detail"></p><pre id="approval-args"></pre><p class="hint">This permission is for this action only. It expires in two minutes.</p><div class="approval-actions"><button id="deny" class="secondary">Not now</button><button id="allow" class="primary">Allow once</button></div></dialog>
+<script src="panel.js"></script>
+</body></html>
