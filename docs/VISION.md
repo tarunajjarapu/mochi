@@ -13,7 +13,7 @@ Eventually, it should help gather information in a browser, organize a project, 
 ## Design principles
 
 1. **Personal first.** One person, one machine, useful defaults. No team SaaS or central account system.
-2. **Own the brain.** Keep state inspectable and model choice configurable. OpenAI is the simplest default; local Ollama remains available for fully local inference.
+2. **Own the brain.** Keep state inspectable and model choice configurable. Connect your ChatGPT account by default, bring API credentials or a model router, or choose local Ollama for fully local inference.
 3. **Presence without interruption.** Small animations express state. Proactivity needs quiet hours, limits, and a clear off switch.
 4. **Useful actions.** The pet is attached to an agent runtime with tools, memory, and outcomes.
 5. **Earn context.** Start with user-provided files and memories. Add opt-in screen or application context only with visible controls.

@@ -2,7 +2,7 @@
 
 **A little company. A little help. Entirely yours.**
 
-Mochi is a personal agent that lives on your desktop as a small animated pet. Click it to talk, ask it to remember something, set a reminder, or give it a task. The app, tools, and saved state run on your machine. Choose OpenAI, a LiteLLM proxy, another compatible endpoint, or local Ollama for the model.
+Mochi is a personal agent that lives on your desktop as a small animated pet. Click it to talk, ask it to remember something, set a reminder, or give it a task. The app, tools, and saved state run on your machine. Connect your ChatGPT account, use an OpenAI API key, route through LiteLLM, or run a local Ollama model.
 
 This is my personal experiment in an assistant in the spirit of [Instinct](https://instinct.com/): something that understands what matters to you and helps you act on it. It is an independent project, not affiliated with Instinct.
 
@@ -12,6 +12,7 @@ This is my personal experiment in an assistant in the spirit of [Instinct](https
 
 - A floating, always-on-top pet with idle, thinking, approval, and happy states.
 - A compact chat panel, menu-bar controls, and `Cmd/Ctrl + Shift + Space` shortcut.
+- **Continue with ChatGPT**: browser sign-in, account switching, available-model picker, encrypted sessions, and automatic renewal.
 - A bounded agent loop using OpenAI Responses, compatible Responses or Chat Completions APIs, or Ollama.
 - Explicit personal memories, with a notebook to inspect and forget them.
 - Persistent reminders, desktop notifications, and catch-up after restarting.
@@ -37,21 +38,25 @@ The first start downloads the pinned Electron desktop runtime if needed. Mochi d
 
 ## Connect a model
 
-Open the pet's **Settings** and choose a provider:
+Open the pet's **Settings → ChatGPT account → Continue with ChatGPT**. Sign in in your browser, select your account/workspace, and allow **Use your ChatGPT plan**. Return to Mochi, choose a model from your account's catalog, and click **Save model**. A first connection selects an available model automatically. Send a message to verify inference.
+
+No API key, proxy, or hosted Mochi backend is required. This uses OpenAI's official [Sign in with ChatGPT](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt) integration for eligible local/personal projects. Model inference runs at OpenAI. Usage counts toward your plan allowance or available credits; **Manage usage** opens ChatGPT's app limits. Signing in does not import your ChatGPT conversations or memories. You can cancel sign-in, reconnect a saved registration, add another account/workspace, or sign out in Settings.
+
+Other provider options remain available:
 
 | Provider | API base URL | Model | Key |
 | --- | --- | --- | --- |
-| **OpenAI (default)** | `https://api.openai.com/v1` | `gpt-6.2-sol` or another supported model ID | Your OpenAI API key |
+| **OpenAI API key** | `https://api.openai.com/v1` | `gpt-6.2-sol` or another supported model ID | Your OpenAI API key |
 | **LiteLLM / compatible** | e.g. `http://127.0.0.1:4000/v1` | Your configured proxy alias, e.g. `mochi` | Your proxy key, if required |
 | **Ollama (local)** | `http://127.0.0.1:11434` | e.g. `qwen3:8b` | None |
 
 Click **Save connection → Check saved connection**, then send a message. The check verifies the model list and credentials; an actual chat verifies inference and tool support. The model must support function calling. Responses is the default protocol for OpenAI and LiteLLM; Chat Completions is available for compatible endpoints that need it.
 
-For **OpenAI**, create a key in your [API project](https://platform.openai.com/api-keys), enable API billing or credits as needed, and paste the key into Mochi's Settings. No Ollama install, proxy, or Mochi server is required. Provider availability and usage charges depend on your account.
+For **OpenAI API key**, create a key in your [API project](https://platform.openai.com/api-keys), enable API billing or credits as needed, and paste the key into Mochi's Settings. API billing is separate from ChatGPT plan usage. Mochi never switches to API billing when your ChatGPT allowance is unavailable.
 
 For **LiteLLM**, a proxy must already be running on your computer or a server you control. Mochi sends the alias to that proxy; the proxy routes it to the provider you configured. Mochi does not start or install LiteLLM automatically.
 
-For **Ollama**, install and start [Ollama](https://ollama.com/download), then run `ollama pull qwen3:8b`. To keep inference local, disable Ollama's cloud features as described in its [FAQ](https://docs.ollama.com/faq). Existing 0.1 Ollama profiles remain on Ollama until you explicitly switch providers.
+For **Ollama**, install and start [Ollama](https://ollama.com/download), then run `ollama pull qwen3:8b`. To keep inference local, disable Ollama's cloud features as described in its [FAQ](https://docs.ollama.com/faq). Existing profiles keep their provider and billing path until you explicitly switch; ChatGPT is the default for new profiles only.
 
 See [connection setup and troubleshooting](docs/CONNECTIONS.md) for environment variables, routing examples, and common errors.
 
@@ -87,6 +92,8 @@ Local state is kept outside this repository in Electron's per-user application d
 
 API keys entered in Settings are encrypted with Electron's OS-backed `safeStorage` and stored separately in `credentials.json`. Keys are scoped to the exact provider and base URL. They are never returned to the renderer after saving, put into prompts, or written to the activity log. If secure storage is unavailable, saving a key fails instead of using plaintext. Environment keys are also supported.
 
+ChatGPT registration IDs, verified identities, and OAuth tokens are encrypted separately in `chatgpt-auth.json` using the same OS-backed storage. The renderer receives account labels and connection status, never tokens. Each sign-in uses PKCE, state and nonce validation, and signed identity-token verification. The callback listens only on `127.0.0.1` during sign-in and closes on completion, cancellation, or timeout. Sign-out attempts remote session revocation and removes local tokens; if revocation cannot be confirmed, Mochi tells you how to disconnect it in ChatGPT settings. Your registration and host ID remain for reconnecting.
+
 **Hosted inference sends chat context and tool results to the selected provider.** That can include saved memories and file content read during a task. A local LiteLLM proxy can still route to a hosted model. OpenAI requests set `store: false`; this does not override the provider's other retention or account policies. For fully local inference, choose Ollama with a local model and disable its cloud features. Opening a URL intentionally contacts that site through your browser.
 
 The renderer has no Node or network access. Main-process requests do not follow redirects. Remote provider endpoints require HTTPS; local HTTP is permitted for Ollama and proxies. All state-changing tools show their arguments and require approval. The initial tools have no shell, unrestricted filesystem access, screen recording, email sending, or purchasing capabilities.
@@ -98,7 +105,7 @@ npm run check
 npm test
 ```
 
-Tests use Node's built-in runner and mocked inference. They cover tool cycles through both hosted API formats, credentials and endpoint boundaries, persistence, reminders, approval denial, cancellation, and file restrictions. No key, model download, or Electron install is needed for the core checks. GitHub Actions runs them on each push and pull request.
+Tests use Node's built-in runner, simulated OpenAI responses, locally signed JWT fixtures, and a real loopback callback listener. They cover sign-in, token validation/refresh/revocation, account isolation, interrupted streams, tool cycles, credentials and endpoint boundaries, persistence, approvals, and file restrictions. No real account, key, model download, or Electron runtime is needed for the core checks; dependencies must be installed, and the tests need loopback networking. GitHub Actions runs them on each push and pull request. Live account eligibility and inference must be verified after you sign in.
 
 For an isolated profile:
 

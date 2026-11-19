@@ -5,6 +5,7 @@ const { randomUUID } = require('node:crypto');
 const { Store } = require('./core/store.cjs');
 const { DEFAULTS, createProvider, validateSettings } = require('./core/provider.cjs');
 const { Credentials } = require('./core/credentials.cjs');
+const { ChatGPTAuth } = require('./core/chatgpt-auth.cjs');
 const { createTools } = require('./core/tools.cjs');
 const { runAgent } = require('./core/agent.cjs');
 
@@ -14,7 +15,7 @@ app.setPath('userData', process.env.MOCHI_DATA_DIR
   : path.join(app.getPath('appData'), 'Mochi'));
 const locked = app.requestSingleInstanceLock();
 if (!locked) { app.quit(); } else {
-  let pet, panel, tray, store, credentials, tools, active, reminderTimer, configuring = false;
+  let pet, panel, tray, store, credentials, chatgpt, tools, active, reminderTimer, configuring = false;
   let quitting = false;
   const approvals = new Map();
   const uiFile = name => path.join(__dirname, 'ui', name);
@@ -22,8 +23,8 @@ if (!locked) { app.quit(); } else {
     for (const win of [pet, panel]) if (win && !win.isDestroyed()) win.webContents.send('mochi:event', event);
   };
   const snapshot = () => ({ ...store.state, workspace: path.join(app.getPath('userData'), 'workspace'), busy: !!active || configuring,
-    providerDefaults: DEFAULTS, keySource: credentials.source(store.state.settings) });
-  const provider = async (settings = store.state.settings) => createProvider(settings, { apiKey: await credentials.get(settings) });
+    providerDefaults: DEFAULTS, keySource: credentials.source(store.state.settings), chatgpt: chatgpt.snapshot() });
+  const provider = async (settings = store.state.settings) => createProvider(settings, { auth: chatgpt, apiKey: await credentials.get(settings) });
   const refresh = () => emit({ type: 'state', state: snapshot() });
   const setMood = mood => emit({ type: 'mood', mood });
   function positionPanel() {
@@ -80,6 +81,21 @@ if (!locked) { app.quit(); } else {
     try { return await work(controller.signal); }
     finally { active = null; refresh(); setMood('idle'); }
   }
+  async function configure(work) {
+    if (active || configuring) throw new Error('Wait for the current operation to finish.');
+    configuring = true; refresh();
+    try { return await work(); }
+    finally { configuring = false; refresh(); }
+  }
+  async function useChatGPT() {
+    const next = { ...DEFAULTS.chatgpt };
+    if (store.state.settings.provider === 'chatgpt') next.model = store.state.settings.model;
+    try {
+      const status = await (await provider(next)).status();
+      if (!status.ready && status.models.length) next.model = status.models[0];
+    } catch { /* Keep the account connected; the connection check will explain recovery. */ }
+    store.state.settings = next; store.save();
+  }
   function deliverReminders() {
     try {
       for (const reminder of store.due()) {
@@ -93,9 +109,11 @@ if (!locked) { app.quit(); } else {
       }
     } catch (error) { emit({ type: 'error', message: `Reminder storage error: ${error.message}` }); }
   }
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     store = new Store(app.getPath('userData'));
     credentials = new Credentials(app.getPath('userData'), safeStorage);
+    chatgpt = new ChatGPTAuth(app.getPath('userData'), safeStorage, { openExternal: url => shell.openExternal(url), onChange: refresh });
+    await chatgpt.initialize();
     tools = createTools({ store, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
     const area = screen.getPrimaryDisplay().workArea;
     pet = makeWindow({ width: 166, height: 180, x: area.x + area.width - 192, y: area.y + area.height - 200,
@@ -135,7 +153,22 @@ if (!locked) { app.quit(); } else {
     register('hide', () => panel.hide());
     register('quit', () => app.quit());
     register('workspace', () => shell.openPath(path.join(app.getPath('userData'), 'workspace')));
-    register('stop', () => active?.abort());
+    register('stop', () => { active?.abort(); chatgpt.cancel(); });
+    register('chatgpt-sign-in', options => configure(async () => {
+      if (!options || typeof options !== 'object' || (options.profileId !== undefined && typeof options.profileId !== 'string') ||
+          (options.enablePlan !== undefined && typeof options.enablePlan !== 'boolean')) throw new Error('Invalid sign-in options.');
+      await chatgpt.signIn({ profileId: options.profileId, enablePlan: options.enablePlan });
+      await useChatGPT(); showPanel();
+      return snapshot();
+    }));
+    register('chatgpt-cancel', () => chatgpt.cancel());
+    register('chatgpt-select', id => configure(async () => {
+      if (typeof id !== 'string') throw new Error('Choose a saved ChatGPT account.');
+      await chatgpt.select(id); await useChatGPT(); return snapshot();
+    }));
+    register('chatgpt-sign-out', () => configure(() => chatgpt.signOut()));
+    register('chatgpt-welcome', () => configure(() => chatgpt.acknowledgeWelcome()));
+    register('chatgpt-usage', () => shell.openExternal('https://chatgpt.com/settings/usage'));
     register('approve', (id, allowed) => {
       if (typeof id !== 'string' || typeof allowed !== 'boolean') throw new Error('Invalid decision.');
       approvals.get(id)?.(allowed);
@@ -155,7 +188,7 @@ if (!locked) { app.quit(); } else {
       credentials.remove(store.state.settings); refresh();
     });
     register('status', async () => {
-      try { return await (await provider()).status(); }
+      try { return await configure(async () => (await provider()).status()); }
       catch (error) { return { connected: false, ready: false, models: [], message: error.message }; }
     });
     register('tool', (name, args) => run(signal => tools.execute(name, args, { signal, approve: action => askApproval(action, signal) })));
@@ -180,6 +213,6 @@ if (!locked) { app.quit(); } else {
   }).catch(error => { dialog.showErrorBox('Mochi could not start', error.message); app.quit(); });
   app.on('second-instance', () => { if (panel) showPanel(); });
   app.on('activate', () => { if (panel) showPanel(); });
-  app.on('before-quit', () => { quitting = true; active?.abort(); clearInterval(reminderTimer); });
+  app.on('before-quit', () => { quitting = true; active?.abort(); chatgpt?.cancel(); clearInterval(reminderTimer); });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 }

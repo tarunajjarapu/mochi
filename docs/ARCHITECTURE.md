@@ -1,6 +1,6 @@
 # Architecture
 
-Mochi is one Electron application that calls a selected model provider. OpenAI is the default; LiteLLM and Ollama are optional separately managed services. The core is plain CommonJS JavaScript with Node standard-library dependencies. No web server, bundler, database daemon, or framework is required for the app.
+Mochi is one Electron application that calls a selected model provider. ChatGPT account sign-in is the default for new profiles; OpenAI API keys, LiteLLM, and Ollama are optional. The core is CommonJS JavaScript, Node standard libraries, and `jose` for signed identity-token verification. No separately hosted server, bundler, database daemon, or framework is required. A short-lived loopback HTTP listener handles OAuth callbacks during sign-in.
 
 ```mermaid
 flowchart LR
@@ -27,13 +27,17 @@ flowchart LR
 - IPC handlers validate the sending window and its exact local URL. The pet can only read state and toggle the companion panel.
 - Only the main process connects to model APIs. OpenAI uses its fixed HTTPS base URL; compatible endpoints allow HTTPS or loopback HTTP. Ollama remains loopback-only. Embedded URL credentials, queries, fragments, and redirects are rejected.
 - API keys are scoped to the provider and exact base URL. They are encrypted using asynchronous OS-backed safeStorage and kept separately from state. The renderer can submit a replacement key but can only read its source/status afterward. Missing secure storage fails closed; environment credentials provide an alternative.
+- ChatGPT OAuth runs only in the main process. A stable host ID and separate client/account registrations live in an encrypted vault; the renderer sees only labels, opaque local IDs, and connection flags. Fresh state, nonce, and S256 PKCE bind each browser attempt. The callback validates state and client identity, persists issued registration before exchange, and verifies signed ID-token issuer/audience/expiry/nonce through OpenAI's JWKS. Returning identities must match the saved subject. OAuth credentials never go to LiteLLM or an API-key adapter.
+- Token refreshes are serialized per registration. Rotated tokens and scopes are committed together with an atomic rename. Terminal refresh failures clear unusable tokens while retaining registration; transient errors retain the connection. Sign-out attempts revocation with a bounded retry, clears local tokens, and reports unconfirmed remote revocation. Browser authorization errors cannot echo token hints into the UI.
 - Every turn has an abort controller. A turn permits at most eight inference steps and six tool calls per step. Inference requests time out after three minutes. Approval expires after two minutes and defaults to denial.
 - Only one turn or manual tool action can run at a time. Stop aborts inference and pending approval; already completed actions are not rolled back.
 - The UI renders model responses and tool content as text, never as HTML.
 
 ## Provider adapters
 
-The agent uses a common message and tool-call format. OpenAI and LiteLLM Responses requests flatten the tool schemas and correlate each `function_call_output` by its `call_id`. Full response output, including encrypted reasoning and assistant phase, is replayed within the current turn with `store: false`. Chat Completions retains provider message fields and returns results with `tool_call_id`. Ollama keeps its native message format.
+The agent uses a common message and tool-call format. API-key OpenAI and LiteLLM Responses requests flatten tool schemas and correlate each `function_call_output` by `call_id`. ChatGPT plan requests use a `mochi` tool namespace, `instructions` for the system prompt, `store: false`, `stream: true`, and complete history in an input array. They omit unsupported output-token caps and persistent response IDs. The streaming adapter processes SSE through `response.completed` before returning text or tool proposals. Deltas alone never authorize tools; interrupted, failed, malformed, or incomplete streams fail closed. Output is currently displayed after completion, rather than token-by-token.
+
+Full response output, including encrypted reasoning and assistant phase, is replayed within the current turn. Chat Completions retains provider message fields and returns results with `tool_call_id`. Ollama keeps its native message format. ChatGPT model discovery uses the signed-in account's `models` catalog and preserves visible model ordering/display labels; API-key mode uses the API `data` catalog. No provider or billing fallback is automatic.
 
 Incomplete responses and malformed JSON arguments fail before any proposed tools execute. Connection checks fetch the model list without generating a response. They establish connectivity and model visibility, not inference quality or full tool compatibility. Hosted model requests transmit chat context and tool outputs to the selected provider; local state storage does not imply local inference.
 
@@ -47,7 +51,7 @@ Saved memories are explicit facts rather than automatically inferred personal pr
 
 ## Persistence and delivery
 
-State writes replace a temporary JSON file by rename, with owner-only permissions on creation. Corrupt or unknown state is reported rather than silently overwritten. Chat, memory, and activity state are not encrypted or synced. API credentials use a separate encrypted file.
+State writes replace a temporary JSON file by rename, with owner-only permissions on creation. Corrupt or unknown state is reported rather than silently overwritten. Chat, memory, and activity state are not encrypted or synced. API credentials use `credentials.json`; ChatGPT credentials use the separate encrypted `chatgpt-auth.json`, with owner-only permissions. All are outside the repository and ignored by Git.
 
 The reminder loop scans timestamps once per second while the app is running. It marks reminders delivered before emitting their notification, prioritizing no duplicate notifications. A crash between marking and displaying can lose that notification; transactional delivery and reconciliation are roadmap work. Due reminders are also checked on startup. The application does not wake sleeping devices.
 

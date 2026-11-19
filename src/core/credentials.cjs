@@ -13,7 +13,7 @@ class Credentials {
     return createHash('sha256').update(`${config.provider}:${config.endpoint}`).digest('hex');
   }
   source(settings) {
-    if (settings.provider === 'ollama') return 'none';
+    if (['ollama', 'chatgpt'].includes(settings.provider)) return 'none';
     if (Object.hasOwn(this.keys, this.id(settings))) return 'saved';
     if (settings.provider === 'openai' && this.env.OPENAI_API_KEY) return 'environment';
     // A proxy environment key is tied to one exact endpoint; changing hosts must not forward it.
@@ -29,7 +29,7 @@ class Credentials {
     fs.renameSync(`${this.file}.tmp`, this.file); this.keys = next;
   }
   async set(settings, value) {
-    if (settings.provider === 'ollama') throw new Error('Ollama does not need an API key.');
+    if (['ollama', 'chatgpt'].includes(settings.provider)) throw new Error('This provider does not use an API key.');
     if (typeof value !== 'string' || !value.trim() || value.length > 4096 || /[\r\n\x00]/.test(value)) throw new Error('Enter a valid API key.');
     if (!await this.available()) throw new Error('Secure storage is unavailable. Set OPENAI_API_KEY or LITELLM_API_KEY in the environment instead.');
     const encrypted = await this.storage.encryptStringAsync(value.trim());

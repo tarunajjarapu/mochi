@@ -9,7 +9,7 @@ class Store {
     this.file = path.join(directory, 'state.json');
     this.state = {
       version: 1,
-      settings: { ...DEFAULTS.openai },
+      settings: { ...DEFAULTS.chatgpt },
       memories: [], reminders: [], messages: [], activity: [],
     };
     if (fs.existsSync(this.file)) {

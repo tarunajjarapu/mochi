@@ -15,12 +15,14 @@ function directory(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true })); return dir;
 }
 
-test('new profiles default to OpenAI; old Ollama profiles migrate without changing destination', t => {
+test('new profiles default to ChatGPT; existing connections keep their destination and billing', t => {
   const dir = directory(t), store = new Store(dir);
-  assert.deepEqual(store.state.settings, DEFAULTS.openai);
+  assert.deepEqual(store.state.settings, DEFAULTS.chatgpt);
   store.state.settings = { endpoint: 'http://localhost:11434', model: 'qwen3:8b' };
   store.save();
   assert.deepEqual(new Store(dir).state.settings, { provider: 'ollama', api: 'ollama', endpoint: 'http://localhost:11434', model: 'qwen3:8b' });
+  store.state.settings = { ...DEFAULTS.openai }; store.save();
+  assert.deepEqual(new Store(dir).state.settings, DEFAULTS.openai);
 });
 
 test('remote endpoints require HTTPS; direct OpenAI cannot be redirected to a different host', () => {

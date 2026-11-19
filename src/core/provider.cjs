@@ -1,14 +1,15 @@
 const DEFAULTS = {
+  chatgpt: { provider: 'chatgpt', endpoint: 'https://api.openai.com/v1', model: 'gpt-6.2-sol', api: 'responses' },
   openai: { provider: 'openai', endpoint: 'https://api.openai.com/v1', model: 'gpt-6.2-sol', api: 'responses' },
   compatible: { provider: 'compatible', endpoint: 'http://127.0.0.1:4000/v1', model: 'mochi', api: 'responses' },
   ollama: { provider: 'ollama', endpoint: 'http://127.0.0.1:11434', model: 'qwen3:8b', api: 'ollama' },
 };
 const isLoopback = url => ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
 
-function validateSettings(input = DEFAULTS.openai) {
+function validateSettings(input = DEFAULTS.chatgpt) {
   // Version 0.1 only supported Ollama. Never silently move existing chats to a cloud provider.
   const provider = input.provider ?? 'ollama';
-  if (!Object.hasOwn(DEFAULTS, provider)) throw new Error('Choose OpenAI, LiteLLM / compatible, or Ollama.');
+  if (!Object.hasOwn(DEFAULTS, provider)) throw new Error('Choose ChatGPT, OpenAI API, LiteLLM / compatible, or Ollama.');
   const url = new URL(input.endpoint);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
       (url.protocol === 'http:' && !isLoopback(url))) {
@@ -16,7 +17,7 @@ function validateSettings(input = DEFAULTS.openai) {
   }
   const endpoint = url.href.replace(/\/+$/, '');
   const api = provider === 'compatible' ? (input.api || 'responses') : DEFAULTS[provider].api;
-  if (provider === 'openai' && endpoint !== DEFAULTS.openai.endpoint) throw new Error('OpenAI uses https://api.openai.com/v1. Choose LiteLLM / compatible for a custom endpoint.');
+  if (['openai', 'chatgpt'].includes(provider) && endpoint !== DEFAULTS.openai.endpoint) throw new Error('OpenAI uses https://api.openai.com/v1. Choose LiteLLM / compatible for a custom endpoint.');
   if (provider === 'ollama' && (!isLoopback(url) || !['', '/'].includes(url.pathname))) throw new Error('Use a local Ollama origin, such as http://127.0.0.1:11434.');
   if (!['responses', 'chat', 'ollama'].includes(api) || (provider === 'compatible' && api === 'ollama')) throw new Error('Choose Responses or Chat Completions.');
   if (typeof input.model !== 'string' || !input.model.trim() || input.model.length > 200 || /[\s\x00-\x1f]/.test(input.model)) throw new Error('Enter a model ID or proxy model alias without spaces.');
@@ -99,19 +100,24 @@ class ResponsesProvider extends HttpProvider {
       model: this.settings.model, input, store: false, max_output_tokens: 8192,
       tools: tools.map(t => ({ type: 'function', ...t.function, strict: true })),
     }, signal);
-    if (result.status && result.status !== 'completed') throw new Error('The model response was incomplete. No tools from this response were executed; try a shorter request.');
-    if (!Array.isArray(result.output)) throw new Error('Provider returned an invalid Responses API result.');
-    const calls = result.output.filter(item => item.type === 'function_call');
-    if (calls.some(call => !call.call_id || !call.name)) throw new Error('Provider returned a tool call without an ID or name.');
-    return {
-      role: 'assistant',
-      content: result.output.filter(item => item.type === 'message').flatMap(item => item.content || [])
-        .map(part => part.type === 'output_text' ? part.text : part.type === 'refusal' ? part.refusal : '').join('\n'),
-      tool_calls: calls.map(call => ({ id: call.call_id, function: { name: call.name, arguments: parseArguments(call.arguments) } })),
-      // Preserve encrypted reasoning and assistant phase for subsequent requests within this turn.
-      responseItems: result.output,
-    };
+    return responseMessage(result);
   }
+}
+
+function responseMessage(result) {
+  if (result.status && result.status !== 'completed') throw new Error('The model response was incomplete. No tools from this response were executed; try a shorter request.');
+  if (!Array.isArray(result.output) || result.output.some(item => !item || typeof item !== 'object')) throw new Error('Provider returned an invalid Responses API result.');
+  const calls = result.output.filter(item => item.type === 'function_call');
+  if (calls.some(call => typeof call.call_id !== 'string' || !call.call_id || typeof call.name !== 'string' || !call.name) ||
+      new Set(calls.map(call => call.call_id)).size !== calls.length) throw new Error('Provider returned a tool call with an invalid, missing, or duplicate ID or name.');
+  return {
+    role: 'assistant',
+    content: result.output.filter(item => item.type === 'message').flatMap(item => item.content || [])
+      .map(part => part.type === 'output_text' ? part.text : part.type === 'refusal' ? part.refusal : '').join('\n'),
+    tool_calls: calls.map(call => ({ id: call.call_id, function: { name: call.name, arguments: parseArguments(call.arguments) } })),
+    // Preserve encrypted reasoning and assistant phase for subsequent requests within this turn.
+    responseItems: result.output,
+  };
 }
 
 class ChatProvider extends HttpProvider {
@@ -137,7 +143,11 @@ class ChatProvider extends HttpProvider {
 
 function createProvider(settings, options = {}) {
   const config = validateSettings(settings);
+  if (config.provider === 'chatgpt') {
+    const { ChatGPTProvider } = require('./chatgpt-provider.cjs');
+    return new ChatGPTProvider(config, options);
+  }
   if (config.provider === 'ollama') return new Ollama(config, options.fetcher);
   return config.api === 'responses' ? new ResponsesProvider(config, options) : new ChatProvider(config, options);
 }
-module.exports = { DEFAULTS, validateSettings, createProvider, Ollama, ResponsesProvider, ChatProvider };
+module.exports = { DEFAULTS, validateSettings, createProvider, Ollama, ResponsesProvider, ChatProvider, responseMessage };

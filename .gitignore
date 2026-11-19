@@ -8,6 +8,8 @@ dist/
 .local/
 credentials.json
 credentials.json.tmp
+chatgpt-auth.json
+chatgpt-auth.json.tmp
 state.json
 state.json.tmp
 coverage/

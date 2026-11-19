@@ -22,13 +22,22 @@
 
 - [ ] Signed macOS app, installer, versioned releases
 - [ ] Opt-in launch at login and remembered pet position
-- [ ] Model discovery, hardware-aware setup, token streaming
+- [ ] Hardware-aware local setup and token-by-token UI rendering
 - [ ] Durable task ledger for requested, approved, completed, and failed actions
 - [ ] Reliable reminder delivery reconciliation, recurring reminders, quiet hours
 - [ ] Export, reset, and retention controls for local data
 - [ ] Automated Electron integration tests and accessibility checks
 
-## 0.3 — A more capable personal agent
+## 0.3 — Bring your ChatGPT account
+
+- [x] Official browser sign-in with PKCE and verified account identity
+- [x] Encrypted account storage, renewal, sign-out/revocation, and account switching
+- [x] Account-specific model discovery and ChatGPT usage links
+- [x] Streaming Responses with namespaced local tools and completion validation
+- [x] Sign-in, session lifecycle, stream failure, and agent-loop tests
+- [x] Verify browser sign-in, account model discovery, and a live local-tool cycle on macOS
+
+## Later — A more capable personal agent
 
 - [ ] Dedicated browser profile and observable browser tasks
 - [ ] MCP client with per-tool allowlists and permissions
