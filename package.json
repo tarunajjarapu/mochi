@@ -1,6 +1,6 @@
 {
   "name": "mochi-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A self-hosted personal agent that lives on your desktop as a pet.",
   "private": true,
   "main": "src/main.cjs",
@@ -9,6 +9,10 @@
     "test": "node --test test/*.test.cjs",
     "check": "node scripts/check.cjs"
   },
-  "engines": { "node": ">=24" },
-  "devDependencies": { "electron": "45.4.1" }
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "electron": "45.4.1"
+  }
 }

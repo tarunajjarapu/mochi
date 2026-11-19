@@ -6,4 +6,8 @@ dist/
 !.env.example
 *.log
 .local/
+credentials.json
+credentials.json.tmp
+state.json
+state.json.tmp
 coverage/

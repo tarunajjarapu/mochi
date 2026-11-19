@@ -10,7 +10,15 @@
 - [ ] Test with a live local model on the target machine
 - [ ] Verify Windows and Linux desktop behavior
 
-## 0.2 — Daily-driver quality
+## 0.2 — Model choice
+
+- [x] OpenAI Responses as the default for new profiles
+- [x] LiteLLM / compatible Responses and Chat Completions endpoints
+- [x] Endpoint-scoped encrypted API keys and environment credentials
+- [x] Connection settings, model listing, migration, and provider contract tests
+- [ ] Verify live inference with a user-configured API key
+
+## Next — Daily-driver quality
 
 - [ ] Signed macOS app, installer, versioned releases
 - [ ] Opt-in launch at login and remembered pet position

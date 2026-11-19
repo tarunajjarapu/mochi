@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, shell, Notification, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, shell, Notification, dialog, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
 const { Store } = require('./core/store.cjs');
-const { Ollama, validateSettings } = require('./core/provider.cjs');
+const { DEFAULTS, createProvider, validateSettings } = require('./core/provider.cjs');
+const { Credentials } = require('./core/credentials.cjs');
 const { createTools } = require('./core/tools.cjs');
 const { runAgent } = require('./core/agent.cjs');
 
@@ -13,14 +14,16 @@ app.setPath('userData', process.env.MOCHI_DATA_DIR
   : path.join(app.getPath('appData'), 'Mochi'));
 const locked = app.requestSingleInstanceLock();
 if (!locked) { app.quit(); } else {
-  let pet, panel, tray, store, tools, active, reminderTimer;
+  let pet, panel, tray, store, credentials, tools, active, reminderTimer, configuring = false;
   let quitting = false;
   const approvals = new Map();
   const uiFile = name => path.join(__dirname, 'ui', name);
   const emit = event => {
     for (const win of [pet, panel]) if (win && !win.isDestroyed()) win.webContents.send('mochi:event', event);
   };
-  const snapshot = () => ({ ...store.state, workspace: path.join(app.getPath('userData'), 'workspace'), busy: !!active });
+  const snapshot = () => ({ ...store.state, workspace: path.join(app.getPath('userData'), 'workspace'), busy: !!active || configuring,
+    providerDefaults: DEFAULTS, keySource: credentials.source(store.state.settings) });
+  const provider = async (settings = store.state.settings) => createProvider(settings, { apiKey: await credentials.get(settings) });
   const refresh = () => emit({ type: 'state', state: snapshot() });
   const setMood = mood => emit({ type: 'mood', mood });
   function positionPanel() {
@@ -71,7 +74,7 @@ if (!locked) { app.quit(); } else {
     });
   }
   async function run(work) {
-    if (active) throw new Error('Mochi is already working. Stop the current task first.');
+    if (active || configuring) throw new Error('Mochi is already working. Wait for the current operation to finish.');
     const controller = new AbortController(); active = controller;
     refresh(); setMood('thinking');
     try { return await work(controller.signal); }
@@ -92,6 +95,7 @@ if (!locked) { app.quit(); } else {
   }
   app.whenReady().then(() => {
     store = new Store(app.getPath('userData'));
+    credentials = new Credentials(app.getPath('userData'), safeStorage);
     tools = createTools({ store, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
     const area = screen.getPrimaryDisplay().workArea;
     pet = makeWindow({ width: 166, height: 180, x: area.x + area.width - 192, y: area.y + area.height - 200,
@@ -136,16 +140,23 @@ if (!locked) { app.quit(); } else {
       if (typeof id !== 'string' || typeof allowed !== 'boolean') throw new Error('Invalid decision.');
       approvals.get(id)?.(allowed);
     });
-    register('settings', input => {
-      if (active) throw new Error('Wait for the current task to finish.');
-      const previous = store.state.settings;
-      store.state.settings = validateSettings(input);
-      try { store.save(); } catch (error) { store.state.settings = previous; throw error; }
-      refresh(); return store.state.settings;
+    register('settings', async input => {
+      if (active || configuring) throw new Error('Wait for the current operation to finish.');
+      const next = validateSettings(input), previous = store.state.settings;
+      configuring = true; refresh();
+      try {
+        if (input.apiKey) await credentials.set(next, input.apiKey);
+        store.state.settings = next; store.save(); return next;
+      } catch (error) { store.state.settings = previous; throw error; }
+      finally { configuring = false; refresh(); }
+    });
+    register('remove-key', () => {
+      if (active || configuring) throw new Error('Wait for the current operation to finish.');
+      credentials.remove(store.state.settings); refresh();
     });
     register('status', async () => {
-      try { return await new Ollama(store.state.settings).status(); }
-      catch { return { connected: false, ready: false, models: [] }; }
+      try { return await (await provider()).status(); }
+      catch (error) { return { connected: false, ready: false, models: [], message: error.message }; }
     });
     register('tool', (name, args) => run(signal => tools.execute(name, args, { signal, approve: action => askApproval(action, signal) })));
     register('chat', text => run(async signal => {
@@ -154,12 +165,12 @@ if (!locked) { app.quit(); } else {
       store.add('messages', { role: 'user', content: text }, 100); refresh();
       let answer;
       try {
-        answer = await runAgent({ text, history, provider: new Ollama(store.state.settings), tools, signal,
+        answer = await runAgent({ text, history, provider: await provider(), tools, signal,
           approve: action => askApproval(action, signal), onEvent: event => {
             emit(event); if (event.type === 'thinking' || event.type === 'tool') setMood('thinking');
           } });
       } catch (error) {
-        answer = signal.aborted ? 'Stopped. Completed actions remain in Activity.' : `I couldn’t finish: ${error.message}\nCheck Settings and make sure Ollama is running with your model installed.`;
+        answer = signal.aborted ? 'Stopped. Completed actions remain in Activity.' : `I couldn’t finish: ${error.message}\nOpen Settings to check your model connection.`;
       }
       store.add('messages', { role: 'assistant', content: answer }, 100);
       return answer;

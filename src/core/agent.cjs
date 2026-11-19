@@ -29,7 +29,7 @@ inspect the screen, or control other apps. State these limits honestly when rele
         signal?.throwIfAborted();
         result = { error: error.message };
       }
-      messages.push({ role: 'tool', tool_name: name || 'unknown', content: JSON.stringify(result) });
+      messages.push({ role: 'tool', tool_name: name || 'unknown', ...(call.id ? { tool_call_id: call.id } : {}), content: JSON.stringify(result) });
       onEvent({ type: 'result', name, result });
     }
   }

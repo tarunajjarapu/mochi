@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { DEFAULTS, validateSettings } = require('./provider.cjs');
 
 class Store {
   constructor(directory) {
@@ -8,7 +9,7 @@ class Store {
     this.file = path.join(directory, 'state.json');
     this.state = {
       version: 1,
-      settings: { endpoint: 'http://127.0.0.1:11434', model: 'qwen3:8b' },
+      settings: { ...DEFAULTS.openai },
       memories: [], reminders: [], messages: [], activity: [],
     };
     if (fs.existsSync(this.file)) {
@@ -17,6 +18,7 @@ class Store {
         throw new Error('Unrecognized state file. Back up state.json before repairing it.');
       }
       this.state = { ...this.state, ...saved };
+      this.state.settings = validateSettings(saved.settings);
     }
   }
   save() {

@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-let state, approvalId, toastTimer;
+let state, approvalId, toastTimer, checkGeneration = 0;
 const api = window.mochi;
 const make = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; };
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 6000); }
@@ -62,20 +62,58 @@ function render(next) {
   state = next;
   renderMessages(); renderNotebook(); renderActivity();
   $('#working').hidden = !state.busy; $('#send').disabled = state.busy;
-  $('#settings-form button').disabled = state.busy;
+  $('#provider-tag').textContent = { openai: 'OPENAI', compatible: 'CUSTOM PROVIDER', ollama: 'LOCAL MODEL' }[state.settings.provider];
+  document.querySelectorAll('#settings-form input, #settings-form select, #settings-form button').forEach(el => el.disabled = state.busy);
+  $('#check').disabled = state.busy;
+  updateProviderForm();
 }
+function draftSettings() {
+  return { provider: $('#provider').value, endpoint: $('#endpoint').value.replace(/\/+$/, ''),
+    model: $('#model').value.trim(), api: $('#provider').value === 'compatible' ? $('#api-format').value : state.providerDefaults[$('#provider').value].api };
+}
+function savedDraft() {
+  const draft = draftSettings();
+  return ['provider', 'endpoint', 'model', 'api'].every(key => draft[key] === state.settings[key]);
+}
+function updateProviderForm() {
+  const selected = $('#provider').value, local = selected === 'ollama', custom = selected === 'compatible';
+  $('#endpoint').readOnly = selected === 'openai';
+  $('#format-fields').hidden = !custom; $('#key-fields').hidden = local;
+  $('#setup-title').textContent = { openai: 'OpenAI, straight from your desktop.', compatible: 'Bring your own model router.', ollama: 'Keep inference on your machine.' }[selected];
+  $('#setup-description').textContent = { openai: 'Add your own OpenAI API key and choose a model. No separate Mochi server is needed. API usage is billed to your provider account.', compatible: 'Point Mochi at your running LiteLLM proxy or another compatible API. Enter its base URL, model alias, and key if required.', ollama: 'Start Ollama and install a model, for example: ollama pull qwen3:8b.' }[selected];
+  $('#data-notice').textContent = local ? 'Chat and tool results go to your local Ollama server.' : 'Chat context and tool results (including files or memories read during a task) are sent to this provider. Tools still run on your computer with the same approvals.';
+  const sameEndpoint = selected === state.settings.provider && $('#endpoint').value.replace(/\/+$/, '') === state.settings.endpoint;
+  $('#key-status').textContent = sameEndpoint && state.keySource === 'saved' ? 'An encrypted key is saved for this address. Leave blank to keep it.' : sameEndpoint && state.keySource === 'environment' ? 'Using the key from Mochi’s environment. A pasted key overrides it.' : 'Keys are encrypted using your OS keychain and saved for this provider and address only. A local proxy may not require a key.';
+  $('#remove-key').hidden = local;
+  $('#remove-key').disabled = state.busy || !savedDraft() || state.keySource !== 'saved';
+}
+function fillSettings(settings) {
+  $('#provider').value = settings.provider; $('#endpoint').value = settings.endpoint;
+  $('#model').value = settings.model; $('#api-format').value = settings.api === 'chat' ? 'chat' : 'responses';
+  $('#api-key').value = ''; $('#models').replaceChildren(); updateProviderForm();
+}
+$('#provider').onchange = () => { fillSettings(state.providerDefaults[$('#provider').value]); $('#status-detail').textContent = 'Save this connection to use it.'; };
+$('#endpoint').oninput = () => { $('#api-key').value = ''; updateProviderForm(); };
+$('#model').oninput = updateProviderForm; $('#api-format').onchange = updateProviderForm;
 async function check() {
-  $('#connection').textContent = 'Checking local model…';
+  if (!savedDraft()) { toast('Save the connection first, then check it.'); return; }
+  const generation = ++checkGeneration;
+  $('#connection').textContent = 'Checking connection…';
   const status = await api.status();
+  if (generation !== checkGeneration) return;
   $('#dot').classList.toggle('online', status.ready);
-  $('#connection').textContent = status.ready ? `${state.settings.model} · local` : status.connected ? 'Model not installed' : 'Local model is offline';
-  $('#status-detail').textContent = status.ready ? 'Connected. Your local model is ready.' : status.connected ? `Ollama is running. Install ${state.settings.model} or choose an installed model.` : 'Start Ollama, then check again. You can still use the notebook and reminders.';
-  $('#models').replaceChildren(...status.models.filter(name => !/cloud/i.test(name)).map(name => { const option = make('option'); option.value = name; return option; }));
+  $('#connection').textContent = status.ready ? state.settings.model : status.connected ? 'Check model name' : 'Connection needs setup';
+  $('#status-detail').textContent = status.message;
+  $('#models').replaceChildren(...status.models.filter(name => state.settings.provider !== 'ollama' || !/cloud/i.test(name)).map(name => { const option = make('option'); option.value = name; return option; }));
 }
 $('#check').onclick = safe(check);
 $('#settings-form').onsubmit = event => { event.preventDefault(); safe(async () => {
-  await api.settings({ endpoint: $('#endpoint').value, model: $('#model').value.trim() }); await check(); toast('Connection saved.');
+  ++checkGeneration;
+  try { await api.settings({ ...draftSettings(), apiKey: $('#provider').value === 'ollama' ? '' : $('#api-key').value.trim() }); }
+  finally { $('#api-key').value = ''; }
+  fillSettings(state.settings); await check(); toast('Connection saved.');
 })(); };
+$('#remove-key').onclick = safe(async () => { await api.removeKey(); await check(); toast('Saved key removed. Environment keys, if set, still apply.'); });
 $('#chat-form').onsubmit = event => { event.preventDefault(); safe(async () => {
   const message = $('#message').value.trim(); if (!message || state.busy) return;
   $('#message').value = ''; await api.chat(message);
@@ -108,4 +146,4 @@ api.onEvent(event => {
   }
   if (event.type === 'approval-resolved' && event.id === approvalId) { $('#approval').close(); approvalId = null; }
 });
-safe(async () => { render(await api.state()); $('#endpoint').value = state.settings.endpoint; $('#model').value = state.settings.model; await check(); })();
+safe(async () => { render(await api.state()); fillSettings(state.settings); await check(); })();
