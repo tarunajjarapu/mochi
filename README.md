@@ -72,7 +72,7 @@ Use **Settings → Open Mochi's workspace** to add files you want it to read. Th
 
 ## Living on your desktop
 
-Drag the grip above the pet to move it. Click the pet to open or close the panel. Closing the panel leaves the pet and reminders running. Use the menu-bar icon or **Settings → Quit Mochi** to exit.
+Drag the pet itself or the grip above it to move it. Mochi remembers its position after a restart. Click the pet to open or close the panel. Closing the panel leaves the pet and reminders running. Use the menu-bar icon or **Settings → Quit Mochi** to exit.
 
 This version does not install a background service or start at login. Reminders cannot wake a sleeping computer or fire while Mochi is closed; overdue reminders appear after it resumes or restarts. Notifications may require your OS notification permission. The chat also keeps a record of delivered reminders.
 

@@ -21,7 +21,8 @@
 ## Next — Daily-driver quality
 
 - [ ] Signed macOS app, installer, versioned releases
-- [ ] Opt-in launch at login and remembered pet position
+- [x] Drag the pet body and remember its position across restarts
+- [ ] Opt-in launch at login
 - [ ] Hardware-aware local setup and token-by-token UI rendering
 - [ ] Durable task ledger for requested, approved, completed, and failed actions
 - [ ] Reliable reminder delivery reconciliation, recurring reminders, quiet hours

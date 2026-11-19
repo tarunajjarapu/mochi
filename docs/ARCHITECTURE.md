@@ -24,7 +24,7 @@ flowchart LR
 ## Runtime boundaries
 
 - Both windows use sandboxing, context isolation, no Node integration, a restrictive Content Security Policy, blocked navigation, and no new windows.
-- IPC handlers validate the sending window and its exact local URL. The pet can only read state and toggle the companion panel.
+- IPC handlers validate the sending window and its exact local URL. The pet can read state, toggle the companion panel, and start/end dragging its own window. The main process reads cursor coordinates itself, bounds movement to a display's work area, and saves the position locally.
 - Only the main process connects to model APIs. OpenAI uses its fixed HTTPS base URL; compatible endpoints allow HTTPS or loopback HTTP. Ollama remains loopback-only. Embedded URL credentials, queries, fragments, and redirects are rejected.
 - API keys are scoped to the provider and exact base URL. They are encrypted using asynchronous OS-backed safeStorage and kept separately from state. The renderer can submit a replacement key but can only read its source/status afterward. Missing secure storage fails closed; environment credentials provide an alternative.
 - ChatGPT OAuth runs only in the main process. A stable host ID and separate client/account registrations live in an encrypted vault; the renderer sees only labels, opaque local IDs, and connection flags. Fresh state, nonce, and S256 PKCE bind each browser attempt. The callback validates state and client identity, persists issued registration before exchange, and verifies signed ID-token issuer/audience/expiry/nonce through OpenAI's JWKS. Returning identities must match the saved subject. OAuth credentials never go to LiteLLM or an API-key adapter.

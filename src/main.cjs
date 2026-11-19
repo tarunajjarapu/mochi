@@ -16,7 +16,7 @@ app.setPath('userData', process.env.MOCHI_DATA_DIR
 const locked = app.requestSingleInstanceLock();
 if (!locked) { app.quit(); } else {
   let pet, panel, tray, store, credentials, chatgpt, tools, active, reminderTimer, configuring = false;
-  let quitting = false;
+  let quitting = false, petDrag, positionTimer;
   const approvals = new Map();
   const uiFile = name => path.join(__dirname, 'ui', name);
   const emit = event => {
@@ -38,6 +38,44 @@ if (!locked) { app.quit(); } else {
     });
   }
   function showPanel() { positionPanel(); panel.show(); panel.focus(); refresh(); }
+  function visiblePetPosition(point, size = { width: 166, height: 180 }) {
+    const area = screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) }).workArea;
+    return { x: Math.round(Math.max(area.x, Math.min(point.x, area.x + Math.max(0, area.width - size.width)))),
+      y: Math.round(Math.max(area.y, Math.min(point.y, area.y + Math.max(0, area.height - size.height)))) };
+  }
+  function savePetPosition() {
+    clearTimeout(positionTimer);
+    if (!pet || pet.isDestroyed()) return;
+    const [x, y] = pet.getPosition(), previous = store.state.petPosition;
+    if (previous?.x === x && previous?.y === y) return;
+    store.state.petPosition = { x, y };
+    try { store.save(); }
+    catch { store.state.petPosition = previous; emit({ type: 'error', message: 'Could not save Mochi’s position.' }); }
+  }
+  function movePetWithCursor() {
+    if (!petDrag || pet.isDestroyed()) return;
+    const cursor = screen.getCursorScreenPoint();
+    const dx = cursor.x - petDrag.cursor.x, dy = cursor.y - petDrag.cursor.y;
+    if (!petDrag.moved && Math.hypot(dx, dy) < 5) return;
+    petDrag.moved = true;
+    const area = screen.getDisplayNearestPoint(cursor).workArea, bounds = petDrag.bounds;
+    const x = Math.round(Math.max(area.x, Math.min(bounds.x + dx, area.x + Math.max(0, area.width - bounds.width))));
+    const y = Math.round(Math.max(area.y, Math.min(bounds.y + dy, area.y + Math.max(0, area.height - bounds.height))));
+    pet.setPosition(x, y);
+  }
+  function endPetDrag() {
+    if (!petDrag) return false;
+    movePetWithCursor();
+    const moved = petDrag.moved;
+    clearInterval(petDrag.timer); clearTimeout(petDrag.timeout); petDrag = null;
+    if (moved) savePetPosition();
+    return moved;
+  }
+  function beginPetDrag() {
+    endPetDrag();
+    petDrag = { cursor: screen.getCursorScreenPoint(), bounds: pet.getBounds(), moved: false,
+      timer: setInterval(movePetWithCursor, 16), timeout: setTimeout(endPetDrag, 300_000) };
+  }
   function makeWindow(options, file) {
     const win = new BrowserWindow({ ...options, webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false,
@@ -116,7 +154,10 @@ if (!locked) { app.quit(); } else {
     await chatgpt.initialize();
     tools = createTools({ store, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
     const area = screen.getPrimaryDisplay().workArea;
-    pet = makeWindow({ width: 166, height: 180, x: area.x + area.width - 192, y: area.y + area.height - 200,
+    const saved = store.state.petPosition;
+    const position = visiblePetPosition(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
+      ? saved : { x: area.x + area.width - 192, y: area.y + area.height - 200 });
+    pet = makeWindow({ width: 166, height: 180, ...position,
       frame: false, transparent: true, resizable: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false }, 'pet.html');
     pet.setAlwaysOnTop(true, 'floating');
     pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -125,11 +166,19 @@ if (!locked) { app.quit(); } else {
     panel.on('close', event => { if (!quitting) { event.preventDefault(); panel.hide(); } });
     pet.once('ready-to-show', () => pet.showInactive());
     panel.once('ready-to-show', showPanel);
-    pet.on('moved', positionPanel);
-    screen.on('display-removed', () => {
-      const current = screen.getPrimaryDisplay().workArea;
-      pet.setPosition(current.x + current.width - 192, current.y + current.height - 200);
+    pet.on('move', () => {
+      positionPanel(); clearTimeout(positionTimer);
+      positionTimer = setTimeout(savePetPosition, 250);
     });
+    pet.on('hide', endPetDrag);
+    pet.webContents.on('render-process-gone', endPetDrag);
+    const keepPetVisible = () => {
+      endPetDrag();
+      const position = visiblePetPosition(pet.getBounds());
+      pet.setPosition(position.x, position.y); positionPanel(); savePetPosition();
+    };
+    screen.on('display-removed', keepPetVisible);
+    screen.on('display-metrics-changed', keepPetVisible);
     const pixels = Buffer.alloc(22 * 22 * 4);
     for (let y = 0; y < 22; y++) for (let x = 0; x < 22; x++) {
       const body = ((x - 10.5) / 9) ** 2 + ((y - 12) / 7) ** 2 < 1;
@@ -150,6 +199,8 @@ if (!locked) { app.quit(); } else {
     globalShortcut.register('CommandOrControl+Shift+Space', showPanel);
     register('state', snapshot, true);
     register('toggle', () => panel.isVisible() ? panel.hide() : showPanel(), true);
+    register('pet-drag-start', beginPetDrag, true);
+    register('pet-drag-end', endPetDrag, true);
     register('hide', () => panel.hide());
     register('quit', () => app.quit());
     register('workspace', () => shell.openPath(path.join(app.getPath('userData'), 'workspace')));
@@ -213,6 +264,9 @@ if (!locked) { app.quit(); } else {
   }).catch(error => { dialog.showErrorBox('Mochi could not start', error.message); app.quit(); });
   app.on('second-instance', () => { if (panel) showPanel(); });
   app.on('activate', () => { if (panel) showPanel(); });
-  app.on('before-quit', () => { quitting = true; active?.abort(); chatgpt?.cancel(); clearInterval(reminderTimer); });
+  app.on('before-quit', () => {
+    quitting = true; active?.abort(); chatgpt?.cancel(); clearInterval(reminderTimer);
+    endPetDrag(); savePetPosition();
+  });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 }
