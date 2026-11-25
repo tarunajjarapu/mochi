@@ -16,6 +16,7 @@
     "electron": "45.4.1"
   },
   "dependencies": {
-    "jose": "6.2.18"
+    "jose": "6.2.18",
+    "three": "0.187.0"
   }
 }

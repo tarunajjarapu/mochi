@@ -8,6 +8,7 @@ const { Credentials } = require('./core/credentials.cjs');
 const { ChatGPTAuth } = require('./core/chatgpt-auth.cjs');
 const { createTools } = require('./core/tools.cjs');
 const { runAgent } = require('./core/agent.cjs');
+const PET_SIZE = { width: 190, height: 220 };
 
 app.setName('Mochi');
 app.setPath('userData', process.env.MOCHI_DATA_DIR
@@ -38,7 +39,7 @@ if (!locked) { app.quit(); } else {
     });
   }
   function showPanel() { positionPanel(); panel.show(); panel.focus(); refresh(); }
-  function visiblePetPosition(point, size = { width: 166, height: 180 }) {
+  function visiblePetPosition(point, size = PET_SIZE) {
     const area = screen.getDisplayNearestPoint({ x: Math.round(point.x), y: Math.round(point.y) }).workArea;
     return { x: Math.round(Math.max(area.x, Math.min(point.x, area.x + Math.max(0, area.width - size.width)))),
       y: Math.round(Math.max(area.y, Math.min(point.y, area.y + Math.max(0, area.height - size.height)))) };
@@ -143,7 +144,7 @@ if (!locked) { app.quit(); } else {
           const notification = new Notification({ title: 'Mochi reminder', body: reminder.text });
           notification.on('click', showPanel); notification.show();
         }
-        setMood('happy'); refresh();
+        refresh();
       }
     } catch (error) { emit({ type: 'error', message: `Reminder storage error: ${error.message}` }); }
   }
@@ -156,8 +157,8 @@ if (!locked) { app.quit(); } else {
     const area = screen.getPrimaryDisplay().workArea;
     const saved = store.state.petPosition;
     const position = visiblePetPosition(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
-      ? saved : { x: area.x + area.width - 192, y: area.y + area.height - 200 });
-    pet = makeWindow({ width: 166, height: 180, ...position,
+      ? saved : { x: area.x + area.width - PET_SIZE.width - 24, y: area.y + area.height - PET_SIZE.height - 20 });
+    pet = makeWindow({ ...PET_SIZE, ...position,
       frame: false, transparent: true, resizable: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false }, 'pet.html');
     pet.setAlwaysOnTop(true, 'floating');
     pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });

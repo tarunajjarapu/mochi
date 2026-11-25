@@ -10,7 +10,7 @@ This is my personal experiment in an assistant in the spirit of [Instinct](https
 
 ## What it does today
 
-- A floating, always-on-top pet with idle, thinking, approval, and happy states.
+- A floating 3D pet with soft lighting, breathing, curious glances, blinking, and expressive ears. Thinking, approval, reminders, and being picked up each have their own movements.
 - A compact chat panel, menu-bar controls, and `Cmd/Ctrl + Shift + Space` shortcut.
 - **Continue with ChatGPT**: browser sign-in, account switching, available-model picker, encrypted sessions, and automatic renewal.
 - A bounded agent loop using OpenAI Responses, compatible Responses or Chat Completions APIs, or Ollama.
@@ -72,7 +72,9 @@ Use **Settings → Open Mochi's workspace** to add files you want it to read. Th
 
 ## Living on your desktop
 
-Drag the pet itself or the grip above it to move it. Mochi remembers its position after a restart. Click the pet to open or close the panel. Closing the panel leaves the pet and reminders running. Use the menu-bar icon or **Settings → Quit Mochi** to exit.
+Drag the pet itself to move it. Mochi remembers its position after a restart. Click the pet to open or close the panel. There is no permanent caption: brief speech bubbles appear for permission requests and reminders. Closing the panel leaves the pet and reminders running. Use the menu-bar icon or **Settings → Quit Mochi** to exit.
+
+The 3D character is built and rendered locally with Three.js; it downloads no models or artwork. Animation respects your system’s reduced-motion preference, pauses while hidden, and is capped at 30 frames per second. If WebGL is unavailable, a lightweight CSS character keeps the same interactions.
 
 This version does not install a background service or start at login. Reminders cannot wake a sleeping computer or fire while Mochi is closed; overdue reminders appear after it resumes or restarts. Notifications may require your OS notification permission. The chat also keeps a record of delivered reminders.
 

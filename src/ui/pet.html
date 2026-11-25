@@ -1,7 +1,30 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'">
-<title>Mochi</title><link rel="stylesheet" href="pet.css"></head>
-<body><div class="pet-wrap"><div class="drag-handle" title="Drag me anywhere">⠿</div>
-<button id="pet" class="pet" aria-label="Talk to Mochi" title="Drag to move · click to chat"><span class="ear left"></span><span class="ear right"></span><span class="body"><span class="blush left"></span><span class="blush right"></span><span class="eyes"><i></i><i></i></span><span class="mouth"></span></span><span class="foot left"></span><span class="foot right"></span></button>
-<div id="mood" role="status">here for you</div></div><script src="pet.js"></script></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'">
+  <title>Mochi</title>
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body data-mood="idle">
+  <div class="pet-wrap">
+    <div id="mood" class="bubble" role="status" aria-live="polite" aria-atomic="true"></div>
+    <button id="pet" class="pet" aria-label="Talk to Mochi" title="Drag to move · click to chat">
+      <canvas id="scene" aria-hidden="true"></canvas>
+      <span class="fallback" aria-hidden="true">
+        <span class="shadow"></span>
+        <span class="character">
+          <span class="ear left"></span><span class="ear right"></span>
+          <span class="foot left"></span><span class="foot right"></span>
+          <span class="body">
+            <span class="blush left"></span><span class="blush right"></span>
+            <span class="eyes"><i></i><i></i></span><span class="mouth"></span>
+          </span>
+        </span>
+      </span>
+    </button>
+  </div>
+  <script src="pet.js"></script>
+</body>
+</html>
