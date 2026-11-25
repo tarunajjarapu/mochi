@@ -49,6 +49,11 @@
 
 ## 0.4 — Context and presence
 
+- [x] Local 3D character with idle and task animations, reduced motion, and a CSS fallback
+- [x] Dark/light/system appearance and readable code blocks
+- [x] GitHub PR inbox with CI, review state, filters, pins, and pagination
+- [x] Read-only PR context tools for AI summaries and code reviews
+
 - [ ] Opt-in screen/application context with a visible capture indicator
 - [ ] Local voice input and speech output
 - [ ] Custom pet themes and richer expressions

@@ -7,21 +7,50 @@ const safe = fn => (...args) => Promise.resolve().then(() => fn(...args)).catch(
 function tab(name) {
   document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.id === name));
   document.querySelectorAll('[data-tab]').forEach(el => el.setAttribute('aria-pressed', el.dataset.tab === name));
+  document.dispatchEvent(new CustomEvent('mochi-tab', { detail: name }));
 }
 document.querySelectorAll('[data-tab]').forEach(el => el.onclick = () => tab(el.dataset.tab));
 $('#hide').onclick = safe(() => api.hide());
 $('#quit').onclick = safe(() => api.quit());
 $('#workspace').onclick = safe(async () => { const error = await api.workspace(); if (error) toast(error); });
 $('#stop').onclick = safe(() => api.stop());
+$('#theme').onchange = safe(() => api.theme($('#theme').value));
+$('#theme-toggle').onclick = safe(() => api.theme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
+function messageContent(text) {
+  const content = make('div');
+  const blocks = text.split(/```([^\n`]*)\n([\s\S]*?)```/g);
+  for (let i = 0; i < blocks.length; i += 3) {
+    if (blocks[i]) {
+      const paragraph = make('div', undefined, 'message-text');
+      for (const rawLine of blocks[i].split('\n')) {
+        const heading = rawLine.match(/^#{1,6}\s+(.+)$/), bullet = rawLine.match(/^\s*[-*]\s+(.+)$/);
+        const line = make(heading ? 'h3' : 'div', undefined, heading ? 'message-heading' : `message-line${bullet ? ' list-line' : ''}`);
+        const value = heading?.[1] || bullet?.[1] || rawLine;
+        for (const part of value.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/g)) {
+          line.append(part.startsWith('**') ? make('strong', part.slice(2, -2)) : part.startsWith('`') ? make('code', part.slice(1, -1)) : document.createTextNode(part));
+        }
+        paragraph.append(line);
+      }
+      content.append(paragraph);
+    }
+    if (blocks[i + 2] !== undefined) {
+      const box = make('div', undefined, 'code-block'), heading = make('div', undefined, 'code-heading');
+      const copy = make('button', 'Copy'); copy.type = 'button';
+      copy.onclick = safe(async () => { await navigator.clipboard.writeText(blocks[i + 2]); copy.textContent = 'Copied'; });
+      heading.append(make('span', blocks[i + 1] || 'code'), copy); box.append(heading, make('pre', blocks[i + 2])); content.append(box);
+    }
+  }
+  return content;
+}
 function renderMessages() {
   const box = $('#messages');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   box.replaceChildren();
   if (!state.messages.length) {
     const welcome = make('div', undefined, 'welcome');
-    welcome.append(make('div', 'YOUR DESKTOP, A LITTLE WARMER', 'eyebrow'), make('h1', 'Small companion.\nA little more possible.'), make('p', 'I’m Mochi. I can help you think things through, remember the little things, and get a few things done.'));
+    welcome.append(make('div', 'A SECOND PAIR OF EYES', 'eyebrow'), make('h1', 'Less context switching.\nMore moving forward.'), make('p', 'Bring me a PR, a failing test, or an idea. I can help you review changes, work through a bug, and remember where you left off.'));
     const choices = make('div', undefined, 'suggestions');
-    for (const text of ['What can you help me with?', 'Remember that I like quiet mornings.', 'Remind me to stretch in 20 minutes.']) {
+    for (const text of ['Which of my open PRs need attention?', 'What pull requests are waiting for my review?', 'Help me debug a failing test.']) {
       const button = make('button', text); button.onclick = () => { $('#message').value = text; $('#message').focus(); }; choices.append(button);
     }
     welcome.append(choices); box.append(welcome);
@@ -29,7 +58,7 @@ function renderMessages() {
   for (const message of state.messages) {
     const bubble = make('div', undefined, `bubble ${message.role}`);
     if (message.role === 'assistant') bubble.append(make('span', 'MOCHI', 'speaker'));
-    bubble.append(make('span', message.content)); box.append(bubble);
+    bubble.append(messageContent(message.content)); box.append(bubble);
   }
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
@@ -60,6 +89,7 @@ function renderActivity() {
 }
 function render(next) {
   state = next;
+  document.dispatchEvent(new CustomEvent('mochi-state', { detail: state }));
   renderMessages(); renderNotebook(); renderActivity();
   $('#working').hidden = !state.busy; $('#send').disabled = state.busy;
   $('#provider-tag').textContent = { chatgpt: 'CHATGPT PLAN', openai: 'OPENAI API', compatible: 'CUSTOM PROVIDER', ollama: 'LOCAL MODEL' }[state.settings.provider];
@@ -169,7 +199,7 @@ $('#chatgpt-got-it').onclick = safe(async () => { await api.chatgptWelcome(); $(
 $('#chatgpt-welcome').addEventListener('cancel', event => { event.preventDefault(); $('#chatgpt-got-it').click(); });
 $('#chat-form').onsubmit = event => { event.preventDefault(); safe(async () => {
   const message = $('#message').value.trim(); if (!message || state.busy) return;
-  $('#message').value = ''; await api.chat(message);
+  $('#message').value = ''; $('#messages').scrollTop = $('#messages').scrollHeight; await api.chat(message);
 })(); };
 $('#message').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('#chat-form').requestSubmit(); } };
 $('#memory-form').onsubmit = event => { event.preventDefault(); safe(async () => {

@@ -11,6 +11,7 @@ body[data-renderer="webgl"] #scene { opacity: 1; }
 body[data-renderer="webgl"] .fallback { display: none; }
 .bubble { position: absolute; z-index: 2; top: 5px; left: 10px; width: 170px; padding: 7px 10px; border: 1px solid #ffffffb0; border-radius: 13px; background: #fffdf5f5; color: #46513a; box-shadow: 0 3px 12px #26321918; text-align: center; text-wrap: pretty; opacity: 0; transform: translateY(5px) scale(.96); transition: opacity .2s, transform .25s; pointer-events: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .bubble.visible { opacity: 1; transform: none; }
+:root:not([data-theme="light"]) .bubble { background: #1e2522f5; color: #e2ead9; border-color: #43503c; box-shadow: 0 3px 12px #0003; }
 .fallback { position: absolute; inset: 0; }
 .shadow { position: absolute; left: 38px; bottom: 8px; width: 114px; height: 19px; background: radial-gradient(ellipse, #36491c30, #36491c00 70%); }
 .character { position: absolute; inset: 0; transform-origin: 50% 90%; animation: breathe 4.8s ease-in-out infinite; }

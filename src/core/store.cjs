@@ -10,6 +10,7 @@ class Store {
     this.state = {
       version: 1,
       settings: { ...DEFAULTS.chatgpt },
+      theme: 'dark', githubPins: [],
       memories: [], reminders: [], messages: [], activity: [],
     };
     if (fs.existsSync(this.file)) {
@@ -19,6 +20,8 @@ class Store {
       }
       this.state = { ...this.state, ...saved };
       this.state.settings = validateSettings(saved.settings);
+      if (!['dark', 'light', 'system'].includes(this.state.theme)) this.state.theme = 'dark';
+      if (!Array.isArray(this.state.githubPins)) this.state.githubPins = [];
     }
   }
   save() {

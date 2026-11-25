@@ -23,6 +23,9 @@ flowchart LR
 
 ## Runtime boundaries
 
+- The GitHub inbox runs fixed GraphQL/REST reads through the installed GitHub CLI, pinned to `github.com`. CLI arguments are passed directly without a shell, with time/output limits and cancellation for agent requests. Credentials stay with GitHub CLI. The browser device flow exposes only a one-time code to the panel. No GitHub writes are exposed to the model or IPC.
+- PR metadata stays in renderer memory while browsing; pins and theme are local state. An explicit AI request can read bounded PR patches, which then become ordinary tool context and appear in local Activity. Reviews check that the head revision has not changed during retrieval. No arbitrary repository files or URLs can be requested through these tools.
+
 - Both windows use sandboxing, context isolation, no Node integration, a restrictive Content Security Policy, blocked navigation, and no new windows.
 - IPC handlers validate the sending window and its exact local URL. The pet can read state, toggle the companion panel, and start/end dragging its own window. The main process reads cursor coordinates itself, bounds movement to a display's work area, and saves the position locally.
 - Only the main process connects to model APIs. OpenAI uses its fixed HTTPS base URL; compatible endpoints allow HTTPS or loopback HTTP. Ollama remains loopback-only. Embedded URL credentials, queries, fragments, and redirects are rejected.

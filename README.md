@@ -11,6 +11,9 @@ This is my personal experiment in an assistant in the spirit of [Instinct](https
 ## What it does today
 
 - A floating 3D pet with soft lighting, breathing, curious glances, blinking, and expressive ears. Thinking, approval, reminders, and being picked up each have their own movements.
+- A dark GitHub PR inbox: your open PRs, requested reviews, CI and review status, repository filters, and local pins.
+- PR details with checks, recent conversation, and one-click summaries or code reviews from your selected model.
+- Dark, light, or system appearance, plus readable code blocks with copy buttons in chat.
 - A compact chat panel, menu-bar controls, and `Cmd/Ctrl + Shift + Space` shortcut.
 - **Continue with ChatGPT**: browser sign-in, account switching, available-model picker, encrypted sessions, and automatic renewal.
 - A bounded agent loop using OpenAI Responses, compatible Responses or Chat Completions APIs, or Ollama.
@@ -35,6 +38,20 @@ npm start
 ```
 
 The first start downloads the pinned Electron desktop runtime if needed. Mochi does not require a separately deployed backend. Electron's main process handles the API requests and local tools.
+
+## Your GitHub inbox
+
+Install the official [GitHub CLI](https://cli.github.com/) (`brew install gh` on macOS). Open **Pull requests → Connect GitHub**, click **Open GitHub**, and enter the displayed one-time code. If GitHub CLI is already signed in, the inbox connects automatically. You can also sign in with `gh auth login --hostname github.com` and refresh Mochi. Credentials stay managed by GitHub CLI; Mochi never copies a token into its own files or renderer. GitHub CLI normally uses the OS credential store, but can fall back to its configuration file if the credential store is unavailable; check `gh auth status` if needed.
+
+- **My open PRs** and **Needs my review** show counts across repositories. **Involved** includes other open PRs you participate in.
+- Filter by title, repository, PR number, draft status, or problems such as failing CI, requested changes, and conflicts. Enter `owner/repo` in the repository field to narrow the GitHub query.
+- Star a PR to pin it locally. Pins rise to the top of the current view; use the Pinned filter to focus on them. Nothing is posted to GitHub.
+- Open a PR for its description, individual CI checks, latest reviews, and recent comments. **Open on GitHub** takes you to the full review and merge controls.
+- **Review with Mochi** reads the latest PR and available patches, then gives findings and suggested tests in chat. **Summarize** explains the change and current blockers. These actions use your selected model and its normal usage allowance.
+
+The inbox refreshes every two minutes while visible and supports loading further pages. It works without connecting a model. Looking at the inbox does not send GitHub data to a model; requesting an AI summary or review sends the PR details it reads. PR tools are read-only and never comment, approve, close, or merge. Reviews inspect at most 30 file patches, with per-file and total size limits; missing or partial diffs are identified. This is not a full repository checkout or a test run.
+
+GitHub.com is supported. Repository access and organization SSO must already be allowed for your GitHub CLI account. To switch accounts, run `gh auth switch --hostname github.com`, then refresh. **Settings → Appearance** selects Dark, Light, or Follow system.
 
 ## Connect a model
 
@@ -98,7 +115,7 @@ ChatGPT registration IDs, verified identities, and OAuth tokens are encrypted se
 
 **Hosted inference sends chat context and tool results to the selected provider.** That can include saved memories and file content read during a task. A local LiteLLM proxy can still route to a hosted model. OpenAI requests set `store: false`; this does not override the provider's other retention or account policies. For fully local inference, choose Ollama with a local model and disable its cloud features. Opening a URL intentionally contacts that site through your browser.
 
-The renderer has no Node or network access. Main-process requests do not follow redirects. Remote provider endpoints require HTTPS; local HTTP is permitted for Ollama and proxies. All state-changing tools show their arguments and require approval. The initial tools have no shell, unrestricted filesystem access, screen recording, email sending, or purchasing capabilities.
+The renderer has no Node or network access. Model requests do not follow redirects. Remote provider endpoints require HTTPS; local HTTP is permitted for Ollama and proxies. All agent tools that change state show their arguments and require approval. GitHub uses fixed read-only queries through GitHub CLI in the main process, without shell interpolation. Local appearance and pin changes are direct UI actions. The model has no shell, unrestricted filesystem access, screen recording, email sending, or purchasing capabilities.
 
 ## Development
 

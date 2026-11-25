@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, globalShortcut, screen, shell, Notification, dialog, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, nativeTheme, globalShortcut, screen, shell, Notification, dialog, safeStorage } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
@@ -8,6 +8,7 @@ const { Credentials } = require('./core/credentials.cjs');
 const { ChatGPTAuth } = require('./core/chatgpt-auth.cjs');
 const { createTools } = require('./core/tools.cjs');
 const { runAgent } = require('./core/agent.cjs');
+const { GitHub, prURL, reference } = require('./core/github.cjs');
 const PET_SIZE = { width: 190, height: 220 };
 
 app.setName('Mochi');
@@ -16,7 +17,7 @@ app.setPath('userData', process.env.MOCHI_DATA_DIR
   : path.join(app.getPath('appData'), 'Mochi'));
 const locked = app.requestSingleInstanceLock();
 if (!locked) { app.quit(); } else {
-  let pet, panel, tray, store, credentials, chatgpt, tools, active, reminderTimer, configuring = false;
+  let pet, panel, tray, store, credentials, chatgpt, github, tools, active, reminderTimer, configuring = false;
   let quitting = false, petDrag, positionTimer;
   const approvals = new Map();
   const uiFile = name => path.join(__dirname, 'ui', name);
@@ -32,7 +33,7 @@ if (!locked) { app.quit(); } else {
     if (!pet || !panel) return;
     const anchor = pet.getBounds();
     const area = screen.getDisplayMatching(anchor).workArea;
-    const width = Math.min(420, area.width), height = Math.min(650, area.height);
+    const width = Math.min(500, area.width), height = Math.min(760, area.height);
     panel.setBounds({ width, height,
       x: Math.max(area.x, Math.min(anchor.x - width + anchor.width, area.x + area.width - width)),
       y: Math.max(area.y, Math.min(anchor.y - height - 8, area.y + area.height - height)),
@@ -150,10 +151,12 @@ if (!locked) { app.quit(); } else {
   }
   app.whenReady().then(async () => {
     store = new Store(app.getPath('userData'));
+    nativeTheme.themeSource = store.state.theme;
     credentials = new Credentials(app.getPath('userData'), safeStorage);
     chatgpt = new ChatGPTAuth(app.getPath('userData'), safeStorage, { openExternal: url => shell.openExternal(url), onChange: refresh });
     await chatgpt.initialize();
-    tools = createTools({ store, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
+    github = new GitHub({ onAuth: auth => emit({ type: 'github-auth', auth }) });
+    tools = createTools({ store, github, workspace: path.join(app.getPath('userData'), 'workspace'), openExternal: url => shell.openExternal(url) });
     const area = screen.getPrimaryDisplay().workArea;
     const saved = store.state.petPosition;
     const position = visiblePetPosition(saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)
@@ -162,8 +165,8 @@ if (!locked) { app.quit(); } else {
       frame: false, transparent: true, resizable: false, alwaysOnTop: true, skipTaskbar: true, hasShadow: false, show: false }, 'pet.html');
     pet.setAlwaysOnTop(true, 'floating');
     pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    panel = makeWindow({ width: 420, height: 650, minWidth: 320, minHeight: 400, frame: false,
-      resizable: false, backgroundColor: '#f8f6ef', alwaysOnTop: true, show: false }, 'panel.html');
+    panel = makeWindow({ width: 500, height: 760, minWidth: 320, minHeight: 400, frame: false,
+      resizable: false, backgroundColor: nativeTheme.shouldUseDarkColors ? '#141817' : '#f6f7f2', alwaysOnTop: true, show: false }, 'panel.html');
     panel.on('close', event => { if (!quitting) { event.preventDefault(); panel.hide(); } });
     pet.once('ready-to-show', () => pet.showInactive());
     panel.once('ready-to-show', showPanel);
@@ -199,6 +202,30 @@ if (!locked) { app.quit(); } else {
     tray.on('click', showPanel);
     globalShortcut.register('CommandOrControl+Shift+Space', showPanel);
     register('state', snapshot, true);
+    register('theme', theme => {
+      if (!['dark', 'light', 'system'].includes(theme)) throw new Error('Choose dark, light, or system appearance.');
+      const previous = store.state.theme; store.state.theme = theme;
+      try { store.save(); } catch (error) { store.state.theme = previous; throw error; }
+      nativeTheme.themeSource = theme; panel.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#141817' : '#f6f7f2');
+      refresh();
+    });
+    register('github-status', () => github.status());
+    register('github-list', options => github.list(options));
+    register('github-detail', (repo, number) => github.detail(repo, number));
+    register('github-connect', () => github.startLogin());
+    register('github-cancel', () => github.cancelLogin());
+    register('github-device', () => {
+      if (!github.auth.pending || !github.auth.code) throw new Error('Start GitHub sign-in first.');
+      return shell.openExternal('https://github.com/login/device');
+    });
+    register('github-open', (repo, number, checks) => shell.openExternal(prURL(repo, number, checks === true)));
+    register('github-pin', (repo, number) => {
+      reference(repo, number);
+      const key = `${repo}#${number}`, previous = store.state.githubPins;
+      store.state.githubPins = previous.includes(key) ? previous.filter(id => id !== key) : [...previous, key].slice(-100);
+      try { store.save(); } catch (error) { store.state.githubPins = previous; throw error; }
+      refresh(); return store.state.githubPins;
+    });
     register('toggle', () => panel.isVisible() ? panel.hide() : showPanel(), true);
     register('pet-drag-start', beginPetDrag, true);
     register('pet-drag-end', endPetDrag, true);
@@ -266,7 +293,7 @@ if (!locked) { app.quit(); } else {
   app.on('second-instance', () => { if (panel) showPanel(); });
   app.on('activate', () => { if (panel) showPanel(); });
   app.on('before-quit', () => {
-    quitting = true; active?.abort(); chatgpt?.cancel(); clearInterval(reminderTimer);
+    quitting = true; active?.abort(); chatgpt?.cancel(); github?.cancelLogin(); clearInterval(reminderTimer);
     endPetDrag(); savePetPosition();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());
